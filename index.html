@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glyphe Atelier — Créateur de polices par dessin</title>
+<style>
+:root {
+  --bg: #111; --fg: #eee; --panel: #1e1e1e; --accent: #6cf; --border: #333;
+}
+body.light { --bg: #fafafa; --fg: #222; --panel: #fff; --accent: #06c; --border: #ccc; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; min-height: 100vh; }
+header { padding: 0.75rem 1rem; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+h1 { margin: 0; font-size: 1.3rem; }
+.langs button, #theme { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
+.langs button.active { background: var(--accent); color: #000; }
+main { display: flex; flex: 1; gap: 1rem; padding: 1rem; flex-wrap: wrap; }
+.sidebar { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; width: 280px; min-width: 240px; }
+.canvas-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+#draw { border: 1px solid var(--border); background: #fff; cursor: crosshair; touch-action: none; max-width: 100%; }
+.char-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; max-height: 220px; overflow-y: auto; margin: 0.5rem 0; }
+.char-grid button { aspect-ratio: 1; font-size: 1.1rem; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; border-radius: 4px; }
+.char-grid button.active { outline: 2px solid var(--accent); }
+label { display: block; margin: 0.6rem 0 0.2rem; font-weight: 500; }
+input[type=range], select, button.action { width: 100%; margin: 0.2rem 0; }
+button.action { padding: 0.5rem; background: var(--accent); color: #000; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; }
+.preview { margin-top: 1rem; padding: 1rem; background: #fff; color: #000; border-radius: 8px; min-height: 60px; font-size: 2rem; line-height: 1.2; word-break: break-all; }
+footer { text-align: center; padding: 0.5rem; font-size: 0.8rem; opacity: 0.6; }
+@media (max-width: 700px) { .sidebar { width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Glyphe Atelier</h1>
+  <div class="langs">
+    <button data-lang="fr" class="active">FR</button>
+    <button data-lang="en">EN</button>
+    <button data-lang="tzm">TZM</button>
+  </div>
+  <button id="theme">🌙</button>
+</header>
+<main>
+  <div class="sidebar">
+    <label id="lbl-char">Caractère</label>
+    <div class="char-grid" id="grid"></div>
+    <label id="lbl-tool">Outil</label>
+    <select id="tool">
+      <option value="pen">Stylo</option>
+      <option value="eraser">Gomme</option>
+    </select>
+    <label id="lbl-size">Taille du trait</label>
+    <input type="range" id="size" min="1" max="40" value="6">
+    <button class="action" id="clear">Effacer le glyphe</button>
+    <button class="action" id="undo">Annuler</button>
+    <button class="action" id="export-svg">Exporter SVG</button>
+    <button class="action" id="export-png">Exporter PNG</button>
+    <button class="action" id="export-all">Exporter tous (ZIP JSON)</button>
+    <label id="lbl-preview">Aperçu du texte</label>
+    <input type="text" id="preview-text" value="Glyphe Atelier ⴰⵣⵓⵍ" style="width:100%;padding:0.4rem;">
+  </div>
+  <div class="canvas-wrap">
+    <canvas id="draw" width="400" height="500"></canvas>
+    <div class="preview" id="preview"></div>
+  </div>
+</main>
+<footer>Outil libre MIT · 100 % navigateur · Dessinez vos glyphes · Latin + Tifinagh</footer>
+<script>
+const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?;:-'\"()[]{}@#$%&*+/=<>".split("")
+  .concat(["ⴰ","ⴱ","ⴳ","ⴷ","ⴹ","ⴻ","ⴼ","ⴽ","ⵀ","ⵃ","ⵄ","ⵅ","ⵇ","ⵉ","ⵊ","ⵍ","ⵎ","ⵏ","ⵓ","ⵔ","ⵕ","ⵖ","ⵙ","ⵚ","ⵛ","ⵜ","ⵟ","ⵡ","ⵢ","ⵣ","ⵥ"]);
+
+const i18n = {
+  fr: { title: "Glyphe Atelier", char: "Caractère", tool: "Outil", size: "Taille du trait", clear: "Effacer le glyphe", undo: "Annuler", svg: "Exporter SVG", png: "Exporter PNG", all: "Exporter tous (JSON)", preview: "Aperçu du texte" },
+  en: { title: "Glyphe Atelier", char: "Character", tool: "Tool", size: "Stroke size", clear: "Clear glyph", undo: "Undo", svg: "Export SVG", png: "Export PNG", all: "Export all (JSON)", preview: "Text preview" },
+  tzm: { title: "Atelier n glyphe", char: "Asekkil", tool: "Aferdis", size: "Tiddi n uzirig", clear: "Sfeḍ aglyph", undo: "Err", svg: "Ssufeg SVG", png: "Ssufeg PNG", all: "Ssufeg akk (JSON)", preview: "Tazwart n uḍris" }
+};
+
+let lang = "fr";
+let current = "A";
+let glyphs = {}; // char -> dataURL
+let drawing = false;
+let last = null;
+const canvas = document.getElementById("draw");
+const ctx = canvas.getContext("2d");
+const history = [];
+
+function setLang(l) {
+  lang = l;
+  const t = i18n[l];
+  document.getElementById("title").textContent = t.title;
+  document.getElementById("lbl-char").textContent = t.char;
+  document.getElementById("lbl-tool").textContent = t.tool;
+  document.getElementById("lbl-size").textContent = t.size;
+  document.getElementById("clear").textContent = t.clear;
+  document.getElementById("undo").textContent = t.undo;
+  document.getElementById("export-svg").textContent = t.svg;
+  document.getElementById("export-png").textContent = t.png;
+  document.getElementById("export-all").textContent = t.all;
+  document.getElementById("lbl-preview").textContent = t.preview;
+  document.querySelectorAll(".langs button").forEach(b => b.classList.toggle("active", b.dataset.lang === l));
+}
+
+document.querySelectorAll(".langs button").forEach(b => b.onclick = () => setLang(b.dataset.lang));
+document.getElementById("theme").onclick = () => {
+  document.body.classList.toggle("light");
+  document.getElementById("theme").textContent = document.body.classList.contains("light") ? "☀️" : "🌙";
+};
+
+function buildGrid() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  chars.forEach(c => {
+    const btn = document.createElement("button");
+    btn.textContent = c;
+    btn.onclick = () => selectChar(c);
+    if (c === current) btn.classList.add("active");
+    grid.appendChild(btn);
+  });
+}
+
+function selectChar(c) {
+  saveCurrent();
+  current = c;
+  buildGrid();
+  loadGlyph();
+  updatePreview();
+}
+
+function saveCurrent() {
+  glyphs[current] = canvas.toDataURL();
+}
+
+function loadGlyph() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGuides();
+  if (glyphs[current]) {
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0); drawGuides(true); };
+    img.src = glyphs[current];
+  }
+}
+
+function drawGuides(over = false) {
+  if (!over) ctx.save();
+  ctx.strokeStyle = "rgba(100,100,100,0.4)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(400, 380); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, 250); ctx.lineTo(400, 250); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, 100); ctx.lineTo(400, 100); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(40, 500); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(360, 0); ctx.lineTo(360, 500); ctx.stroke();
+  ctx.setLineDash([]);
+  if (!over) ctx.restore();
+}
+
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / r.width;
+  const scaleY = canvas.height / r.height;
+  const x = (e.clientX || e.touches?.[0].clientX) - r.left;
+  const y = (e.clientY || e.touches?.[0].clientY) - r.top;
+  return { x: x * scaleX, y: y * scaleY };
+}
+
+function start(e) { drawing = true; last = getPos(e); history.push(ctx.getImageData(0,0,canvas.width,canvas.height)); e.preventDefault(); }
+function move(e) {
+  if (!drawing) return;
+  const p = getPos(e);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = document.getElementById("size").value;
+  ctx.strokeStyle = document.getElementById("tool").value === "eraser" ? "#fff" : "#000";
+  ctx.beginPath();
+  ctx.moveTo(last.x, last.y);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  last = p;
+  e.preventDefault();
+}
+function end() { drawing = false; saveCurrent(); updatePreview(); }
+
+canvas.addEventListener("mousedown", start);
+canvas.addEventListener("mousemove", move);
+canvas.addEventListener("mouseup", end);
+canvas.addEventListener("mouseleave", end);
+canvas.addEventListener("touchstart", start, {passive:false});
+canvas.addEventListener("touchmove", move, {passive:false});
+canvas.addEventListener("touchend", end);
+
+document.getElementById("clear").onclick = () => {
+  history.push(ctx.getImageData(0,0,canvas.width,canvas.height));
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGuides();
+  delete glyphs[current];
+  updatePreview();
+};
+document.getElementById("undo").onclick = () => {
+  if (history.length) {
+    ctx.putImageData(history.pop(), 0, 0);
+    saveCurrent();
+    updatePreview();
+  }
+};
+
+function updatePreview() {
+  const text = document.getElementById("preview-text").value;
+  const prev = document.getElementById("preview");
+  prev.innerHTML = "";
+  for (const ch of text) {
+    if (glyphs[ch]) {
+      const img = document.createElement("img");
+      img.src = glyphs[ch];
+      img.style.height = "48px";
+      img.style.verticalAlign = "middle";
+      prev.appendChild(img);
+    } else {
+      prev.appendChild(document.createTextNode(ch));
+    }
+  }
+}
+document.getElementById("preview-text").oninput = updatePreview;
+
+document.getElementById("export-png").onclick = () => {
+  const a = document.createElement("a");
+  a.download = `glyphe-${current}.png`;
+  a.href = canvas.toDataURL();
+  a.click();
+};
+
+document.getElementById("export-svg").onclick = () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500"><image href="${canvas.toDataURL()}" width="400" height="500"/></svg>`;
+  const a = document.createElement("a");
+  a.download = `glyphe-${current}.svg`;
+  a.href = "data:image/svg+xml," + encodeURIComponent(svg);
+  a.click();
+};
+
+document.getElementById("export-all").onclick = () => {
+  saveCurrent();
+  const data = { name: "Glyphe Atelier Font", glyphs, metrics: { baseline: 380, xHeight: 250, cap: 100, width: 400, height: 500 } };
+  const blob = new Blob([JSON.stringify(data)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.download = "glyphe-atelier-project.json";
+  a.href = URL.createObjectURL(blob);
+  a.click();
+};
+
+buildGrid();
+drawGuides();
+setLang("fr");
+updatePreview();
+</script>
+</body>
+</html>
